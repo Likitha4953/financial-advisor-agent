@@ -73,65 +73,25 @@ def extract_text(pil_image):
 def parse_expense(text):
     result = {"amount": None, "date": None, "merchant": None}
 
-    # ---- AMOUNT DETECTION ----
-    # OCR reads ₹ as these symbols: = % ~ F Rs R$
-    amount_patterns = [
-        # Total =504.00 or Total %504.00  ← YOUR EXACT FORMAT
-        r'[Tt]otal\s*[=~%FRs$]*\s*([0-9,]+\.[0-9]{2})',
-
-        # Any of these symbols followed by amount
-        r'[=~%]\s*([0-9]+\.[0-9]{2})',
-
-        # Sub-Total / GST lines
-        r'[Ss]ub.?[Tt]otal\s*[=~%FRs$]*\s*([0-9,]+\.[0-9]{2})',
-
-        # Plain decimal number after keywords
-        r'(?:total|amount|paid|grand)[^0-9]*([0-9,]+\.[0-9]{2})',
-
-        # Last resort: largest decimal number in text
-        r'\b([1-9][0-9]*\.[0-9]{2})\b',
-    ]
-
-    # Collect ALL decimal numbers found
-    all_amounts = re.findall(r'\b([1-9][0-9]*\.[0-9]{2})\b', text)
-    print("All amounts found:", all_amounts)
-
-    for pattern in amount_patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        if matches:
-            amt = matches[-1].replace(',', '')
-            try:
-                val = float(amt)
-                if val > 1:
-                    result["amount"] = val
-                    break
-            except:
-                continue
-
-    # If still not found, take the LARGEST decimal number
-    # (usually the total is the biggest number)
-    if not result["amount"] and all_amounts:
-        values = []
-        for a in all_amounts:
-            try:
-                values.append(float(a.replace(',', '')))
-            except:
-                continue
-        if values:
+    # ---- AMOUNT: Use the exact pattern that worked ----
+    # First try: "Total" followed by amount
+    total_match = re.search(r'Total[^0-9]*(\d+\.\d{2})', text, re.IGNORECASE)
+    if total_match:
+        result["amount"] = float(total_match.group(1))
+    
+    # Second try: find all decimals, pick biggest
+    if not result["amount"]:
+        all_decimals = re.findall(r'\b(\d{2,6}\.\d{2})\b', text)
+        if all_decimals:
+            values = [float(x) for x in all_decimals]
             result["amount"] = max(values)
 
-    # ---- DATE DETECTION ----
-    date_patterns = [
-        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',
-        r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}',
-    ]
-    for pattern in date_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            result["date"] = match.group(0)
-            break
+    # ---- DATE ----
+    date_match = re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', text)
+    if date_match:
+        result["date"] = date_match.group(0)
 
-    # ---- MERCHANT DETECTION ----
+    # ---- MERCHANT ----
     known = {
         'swiggy': 'Swiggy', 'zomato': 'Zomato',
         'amazon': 'Amazon', 'flipkart': 'Flipkart',
@@ -140,7 +100,6 @@ def parse_expense(text):
         'phonepe': 'PhonePe', 'gpay': 'Google Pay',
         'paytm': 'Paytm', 'jio': 'Jio', 'airtel': 'Airtel',
         'blinkit': 'Blinkit', 'zepto': 'Zepto',
-        'dominos': 'Dominos', 'kfc': 'KFC',
     }
     for k, v in known.items():
         if k in text.lower():
