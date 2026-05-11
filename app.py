@@ -23,17 +23,28 @@ from storage import (initialize_storage, add_expense,
 
 def preprocess_image(pil_image):
     img = np.array(pil_image)
+    
+    # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    scale = 2
+    
+    # Make image much bigger for better OCR
+    scale = 3  # increased from 2 to 3
     width = int(gray.shape[1] * scale)
     height = int(gray.shape[0] * scale)
     enlarged = cv2.resize(gray, (width, height),
                           interpolation=cv2.INTER_CUBIC)
-    denoised = cv2.fastNlMeansDenoising(enlarged, h=10)
+    
+    # Strong denoising
+    denoised = cv2.fastNlMeansDenoising(enlarged, h=30)
+    
+    # Sharpen
     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
     sharpened = cv2.filter2D(denoised, -1, kernel)
+    
+    # Threshold
     _, thresh = cv2.threshold(sharpened, 0, 255,
                                cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    
     return Image.fromarray(thresh)
 
 
