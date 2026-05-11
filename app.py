@@ -50,9 +50,22 @@ def preprocess_image(pil_image):
 
 def extract_text(pil_image):
     processed = preprocess_image(pil_image)
-    text1 = pytesseract.image_to_string(processed, config='--psm 6')
-    text2 = pytesseract.image_to_string(processed, config='--psm 11')
-    return text1 if len(text1) > len(text2) else text2
+    
+    # Try 4 different OCR modes
+    configs = [
+        '--psm 6',   # uniform block of text
+        '--psm 4',   # single column
+        '--psm 11',  # sparse text
+        '--psm 3',   # fully automatic
+    ]
+    
+    results = []
+    for config in configs:
+        text = pytesseract.image_to_string(processed, config=config)
+        results.append(text)
+    
+    # Return longest result (most text extracted)
+    return max(results, key=len)
 
 
 # ---- EXPENSE PARSER ----
@@ -60,37 +73,35 @@ def extract_text(pil_image):
 def parse_expense(text):
     result = {"amount": None, "date": None, "merchant": None}
 
+    print("DEBUG RAW TEXT:")
+    print(text)  # This prints in your CMD window so you can see
+    print("="*50)
+
     # ---- AMOUNT DETECTION ----
     amount_patterns = [
-        # Handles: Total ₹ 504.00  ← YOUR BILL FORMAT
-        r'(?:total|grand total)[:\s]*₹\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-
-        # Handles: ₹ 504.00 or ₹504.00
-        r'₹\s*([0-9,]+\.[0-9]{2})',
-
-        # Handles: ₹ 504 (no decimal)
-        r'₹\s*([0-9,]+)',
-
-        # Handles: Rs. 504.00
-        r'Rs\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-
-        # Handles: INR 504
-        r'INR\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-
-        # Handles: paid 504 / amount 504 / debited 504
-        r'(?:paid|amount|total|debited)[:\s]*(?:₹|Rs\.?|INR)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-
-        # Last resort: any decimal number like 504.00
-        r'\b([0-9,]+\.[0-9]{2})\b',
+        # Total with rupee symbol (with or without space)
+        r'[Tt]otal\s*[₹Rs\.R$]*\s*([0-9,]+\.[0-9]{2})',
+        
+        # Any rupee symbol variant followed by amount
+        r'[₹Rs\.R$]+\s*([0-9]+\.[0-9]{2})',
+        
+        # Grand total
+        r'[Gg]rand\s*[Tt]otal\s*[₹Rs\.R$]*\s*([0-9,]+\.[0-9]{2})',
+        
+        # Just decimal numbers after keywords
+        r'(?:total|amount|paid|grand)[^0-9]*([0-9,]+\.[0-9]{2})',
+        
+        # Any decimal number (last resort)
+        r'\b([1-9][0-9,]*\.[0-9]{2})\b',
     ]
 
     for pattern in amount_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            amt = match.group(1).replace(',', '')
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            # Take the LAST match — usually the total is at bottom
+            amt = matches[-1].replace(',', '')
             try:
                 val = float(amt)
-                # Ignore tiny numbers like pin codes, order numbers
                 if val > 1:
                     result["amount"] = val
                     break
@@ -99,9 +110,8 @@ def parse_expense(text):
 
     # ---- DATE DETECTION ----
     date_patterns = [
-        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',   # 24-04-2024 ← YOUR BILL
+        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',
         r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}',
-        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}',
     ]
     for pattern in date_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -111,28 +121,14 @@ def parse_expense(text):
 
     # ---- MERCHANT DETECTION ----
     known = {
-        'swiggy': 'Swiggy',
-        'zomato': 'Zomato',
-        'amazon': 'Amazon',
-        'flipkart': 'Flipkart',
-        'uber': 'Uber',
-        'ola': 'Ola',
-        'netflix': 'Netflix',
-        'bigbasket': 'BigBasket',
-        'phonepe': 'PhonePe',
-        'gpay': 'Google Pay',
-        'paytm': 'Paytm',
-        'jio': 'Jio',
-        'airtel': 'Airtel',
-        'blinkit': 'Blinkit',
-        'zepto': 'Zepto',
-        'dunzo': 'Dunzo',
-        'rapido': 'Rapido',
-        'irctc': 'IRCTC',
-        'hotstar': 'Hotstar',
-        'dominos': 'Dominos',
-        'kfc': 'KFC',
-        'mcdonalds': 'McDonalds',
+        'swiggy': 'Swiggy', 'zomato': 'Zomato',
+        'amazon': 'Amazon', 'flipkart': 'Flipkart',
+        'uber': 'Uber', 'ola': 'Ola',
+        'netflix': 'Netflix', 'bigbasket': 'BigBasket',
+        'phonepe': 'PhonePe', 'gpay': 'Google Pay',
+        'paytm': 'Paytm', 'jio': 'Jio', 'airtel': 'Airtel',
+        'blinkit': 'Blinkit', 'zepto': 'Zepto',
+        'dominos': 'Dominos', 'kfc': 'KFC',
     }
     for k, v in known.items():
         if k in text.lower():
