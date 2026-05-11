@@ -73,32 +73,32 @@ def extract_text(pil_image):
 def parse_expense(text):
     result = {"amount": None, "date": None, "merchant": None}
 
-    print("DEBUG RAW TEXT:")
-    print(text)  # This prints in your CMD window so you can see
-    print("="*50)
-
     # ---- AMOUNT DETECTION ----
+    # OCR reads ₹ as these symbols: = % ~ F Rs R$
     amount_patterns = [
-        # Total with rupee symbol (with or without space)
-        r'[Tt]otal\s*[₹Rs\.R$]*\s*([0-9,]+\.[0-9]{2})',
-        
-        # Any rupee symbol variant followed by amount
-        r'[₹Rs\.R$]+\s*([0-9]+\.[0-9]{2})',
-        
-        # Grand total
-        r'[Gg]rand\s*[Tt]otal\s*[₹Rs\.R$]*\s*([0-9,]+\.[0-9]{2})',
-        
-        # Just decimal numbers after keywords
+        # Total =504.00 or Total %504.00  ← YOUR EXACT FORMAT
+        r'[Tt]otal\s*[=~%FRs$]*\s*([0-9,]+\.[0-9]{2})',
+
+        # Any of these symbols followed by amount
+        r'[=~%]\s*([0-9]+\.[0-9]{2})',
+
+        # Sub-Total / GST lines
+        r'[Ss]ub.?[Tt]otal\s*[=~%FRs$]*\s*([0-9,]+\.[0-9]{2})',
+
+        # Plain decimal number after keywords
         r'(?:total|amount|paid|grand)[^0-9]*([0-9,]+\.[0-9]{2})',
-        
-        # Any decimal number (last resort)
-        r'\b([1-9][0-9,]*\.[0-9]{2})\b',
+
+        # Last resort: largest decimal number in text
+        r'\b([1-9][0-9]*\.[0-9]{2})\b',
     ]
+
+    # Collect ALL decimal numbers found
+    all_amounts = re.findall(r'\b([1-9][0-9]*\.[0-9]{2})\b', text)
+    print("All amounts found:", all_amounts)
 
     for pattern in amount_patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
-            # Take the LAST match — usually the total is at bottom
             amt = matches[-1].replace(',', '')
             try:
                 val = float(amt)
@@ -107,6 +107,18 @@ def parse_expense(text):
                     break
             except:
                 continue
+
+    # If still not found, take the LARGEST decimal number
+    # (usually the total is the biggest number)
+    if not result["amount"] and all_amounts:
+        values = []
+        for a in all_amounts:
+            try:
+                values.append(float(a.replace(',', '')))
+            except:
+                continue
+        if values:
+            result["amount"] = max(values)
 
     # ---- DATE DETECTION ----
     date_patterns = [
