@@ -49,27 +49,48 @@ def extract_text(pil_image):
 def parse_expense(text):
     result = {"amount": None, "date": None, "merchant": None}
 
+    # ---- AMOUNT DETECTION ----
     amount_patterns = [
-        r'₹\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-        r'₹\s*([0-9,]+)(?:/|-)?',
+        # Handles: Total ₹ 504.00  ← YOUR BILL FORMAT
+        r'(?:total|grand total)[:\s]*₹\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+
+        # Handles: ₹ 504.00 or ₹504.00
+        r'₹\s*([0-9,]+\.[0-9]{2})',
+
+        # Handles: ₹ 504 (no decimal)
+        r'₹\s*([0-9,]+)',
+
+        # Handles: Rs. 504.00
         r'Rs\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+
+        # Handles: INR 504
         r'INR\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+
+        # Handles: paid 504 / amount 504 / debited 504
         r'(?:paid|amount|total|debited)[:\s]*(?:₹|Rs\.?|INR)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+
+        # Last resort: any decimal number like 504.00
         r'\b([0-9,]+\.[0-9]{2})\b',
     ]
+
     for pattern in amount_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             amt = match.group(1).replace(',', '')
             try:
-                result["amount"] = float(amt)
-                break
+                val = float(amt)
+                # Ignore tiny numbers like pin codes, order numbers
+                if val > 1:
+                    result["amount"] = val
+                    break
             except:
                 continue
 
+    # ---- DATE DETECTION ----
     date_patterns = [
-        r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}',
+        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',   # 24-04-2024 ← YOUR BILL
         r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}',
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}',
     ]
     for pattern in date_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -77,16 +98,30 @@ def parse_expense(text):
             result["date"] = match.group(0)
             break
 
+    # ---- MERCHANT DETECTION ----
     known = {
-        'swiggy': 'Swiggy', 'zomato': 'Zomato',
-        'amazon': 'Amazon', 'flipkart': 'Flipkart',
-        'uber': 'Uber', 'ola': 'Ola',
-        'netflix': 'Netflix', 'bigbasket': 'BigBasket',
-        'phonepe': 'PhonePe', 'gpay': 'Google Pay',
-        'paytm': 'Paytm', 'jio': 'Jio', 'airtel': 'Airtel',
-        'blinkit': 'Blinkit', 'zepto': 'Zepto',
-        'dunzo': 'Dunzo', 'rapido': 'Rapido',
-        'irctc': 'IRCTC', 'hotstar': 'Hotstar'
+        'swiggy': 'Swiggy',
+        'zomato': 'Zomato',
+        'amazon': 'Amazon',
+        'flipkart': 'Flipkart',
+        'uber': 'Uber',
+        'ola': 'Ola',
+        'netflix': 'Netflix',
+        'bigbasket': 'BigBasket',
+        'phonepe': 'PhonePe',
+        'gpay': 'Google Pay',
+        'paytm': 'Paytm',
+        'jio': 'Jio',
+        'airtel': 'Airtel',
+        'blinkit': 'Blinkit',
+        'zepto': 'Zepto',
+        'dunzo': 'Dunzo',
+        'rapido': 'Rapido',
+        'irctc': 'IRCTC',
+        'hotstar': 'Hotstar',
+        'dominos': 'Dominos',
+        'kfc': 'KFC',
+        'mcdonalds': 'McDonalds',
     }
     for k, v in known.items():
         if k in text.lower():
@@ -94,7 +129,6 @@ def parse_expense(text):
             break
 
     return result
-
 
 # ---- SPENDING CHART ----
 
